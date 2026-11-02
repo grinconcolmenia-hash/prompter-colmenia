@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Prompter Colmen IA</title>
+<meta name="theme-color" content="#0f0d0a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Prompter">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Sora:wght@400;600;700&display=swap">
+<style>
+/* Layout: two screens. Editor (script + settings) and Prompter (camera full-bleed, text band near the lens). */
+:root {
+  --bg: #0f0d0a;          /* warm black, like a dark studio */
+  --surface: #1b1813;
+  --line: #2f2a21;
+  --fg: #f3ede2;
+  --muted: #a39a89;
+  --honey: #f2b134;       /* Colmen IA accent */
+  --rec: #ff4b3e;
+  --ui: "Sora", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --read: "Atkinson Hyperlegible", "Verdana", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--fg); font: 15px/1.45 var(--ui);
+  overscroll-behavior: none;
+}
+[hidden] { display: none !important; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 2px solid var(--honey); outline-offset: 2px;
+}
+
+/* ---------- Editor ---------- */
+#editor {
+  min-height: 100%;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) calc(96px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  max-width: 720px; margin: 0 auto;
+  display: flex; flex-direction: column; gap: 20px;
+}
+.brand { display: flex; align-items: center; gap: 10px; padding-top: 4px; }
+.brand svg { width: 30px; height: 30px; flex: none; }
+.brand h1 { font-size: 19px; margin: 0; letter-spacing: -0.01em; }
+.brand small { display: block; color: var(--muted); font-size: 12px; font-weight: 400; }
+.label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted);
+  display: flex; justify-content: space-between; align-items: baseline;
+}
+#script {
+  width: 100%; min-height: 34vh; resize: vertical;
+  background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 12px;
+  padding: 14px; font: 17px/1.5 var(--read);
+}
+.stats { font-variant-numeric: tabular-nums; text-transform: none; letter-spacing: 0; font-size: 12px; }
+.settings { display: grid; gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 4px 14px; }
+.row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.row:last-child { border-bottom: 0; }
+.row > span { font-size: 14px; }
+.row output { font-variant-numeric: tabular-nums; color: var(--honey); font-weight: 600; font-size: 13px; }
+.row input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--honey); }
+.seg { display: flex; gap: 6px; flex-wrap: wrap; }
+.seg button {
+  border: 1px solid var(--line); background: transparent; border-radius: 999px; padding: 6px 12px; font-size: 13px;
+}
+.seg button[aria-pressed=true] { background: var(--honey); color: #1a1205; border-color: var(--honey); font-weight: 600; }
+.swatches { display: flex; gap: 8px; }
+.swatches button { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--line); padding: 0; }
+.swatches button[aria-pressed=true] { border-color: var(--honey); box-shadow: 0 0 0 2px var(--bg) inset; }
+.toggle { position: relative; width: 46px; height: 28px; border-radius: 999px; background: var(--line); border: 0; transition: background .2s; }
+.toggle::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: var(--fg); transition: transform .2s; }
+.toggle[aria-pressed=true] { background: var(--honey); }
+.toggle[aria-pressed=true]::after { transform: translateX(18px); background: #1a1205; }
+.cta-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+  padding: 12px max(16px, env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: linear-gradient(to top, var(--bg) 70%, transparent);
+  display: flex; gap: 10px; justify-content: center;
+}
+.cta-bar button { flex: 1; max-width: 340px; border: 0; border-radius: 14px; padding: 15px; font-weight: 700; font-size: 16px; }
+.primary { background: var(--honey); color: #1a1205; }
+.ghost { background: var(--surface); border: 1px solid var(--line) !important; }
+.note { color: var(--muted); font-size: 13px; }
+.error { background: #3a1512; border: 1px solid #6e2a22; color: #ffd9d4; border-radius: 12px; padding: 12px 14px; font-size: 14px; }
+
+/* ---------- Prompter ---------- */
+#prompter { position: fixed; inset: 0; background: #000; overflow: hidden; touch-action: none; }
+#cam { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+#cam.mirror { transform: scaleX(-1); }
+#band {
+  position: absolute; left: 0; right: 0; top: 0;
+  padding-top: env(safe-area-inset-top);
+  overflow: hidden;
+}
+#band .viewport { position: relative; height: 100%; overflow: hidden; }
+#roll {
+  position: absolute; left: 0; right: 0; top: 0; will-change: transform;
+  padding: 0 max(18px, env(safe-area-inset-right)) 0 max(18px, env(safe-area-inset-left));
+  font-family: var(--read); font-weight: 700; line-height: 1.35; white-space: pre-wrap; overflow-wrap: break-word;
+  text-align: center;
+}
+#roll.flip { transform-origin: center; }
+#guide {
+  position: absolute; left: 0; right: 0; height: 0; border-top: 2px dashed rgba(242,177,52,.85); pointer-events: none;
+}
+#guide::before, #guide::after {
+  content: ""; position: absolute; top: -8px; border: 7px solid transparent;
+}
+#guide::before { left: 4px; border-left-color: var(--honey); }
+#guide::after { right: 4px; border-right-color: var(--honey); }
+
+.hud {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 3;
+  padding: 10px max(14px, env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  display: flex; flex-direction: column; gap: 12px;
+  background: linear-gradient(to top, rgba(0,0,0,.65), transparent);
+}
+.hud-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pill {
+  display: inline-flex; align-items: center; gap: 2px; background: rgba(20,17,12,.72); backdrop-filter: blur(8px);
+  border-radius: 999px; padding: 4px; border: 1px solid rgba(255,255,255,.08);
+}
+.pill button { width: 38px; height: 38px; border-radius: 50%; border: 0; background: transparent; font-size: 20px; line-height: 1; }
+.pill output { min-width: 46px; text-align: center; font-variant-numeric: tabular-nums; font-size: 13px; }
+.pill output b { display: block; font-size: 10px; letter-spacing: .08em; color: var(--muted); font-weight: 400; text-transform: uppercase; }
+.icon-btn { width: 48px; height: 48px; border-radius: 50%; border: 0; background: rgba(20,17,12,.72); backdrop-filter: blur(8px); display: grid; place-items: center; }
+.icon-btn svg { width: 22px; height: 22px; }
+#recBtn {
+  width: 76px; height: 76px; border-radius: 50%; border: 4px solid #fff; background: transparent; padding: 6px; flex: none;
+}
+#recBtn i { display: block; width: 100%; height: 100%; border-radius: 50%; background: var(--rec); transition: border-radius .2s, transform .2s; }
+#recBtn.on i { border-radius: 8px; transform: scale(.55); }
+#timer {
+  position: absolute; z-index: 3; right: max(14px, env(safe-area-inset-right)); bottom: calc(150px + env(safe-area-inset-bottom));
+  background: var(--rec); color: #fff; font: 600 13px/1 var(--ui); font-variant-numeric: tabular-nums;
+  padding: 7px 10px; border-radius: 8px;
+}
+#countdown {
+  position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; pointer-events: none;
+  font: 700 140px/1 var(--ui); color: #fff; text-shadow: 0 4px 30px rgba(0,0,0,.6);
+}
+#pausedTag {
+  position: absolute; z-index: 3; left: 50%; transform: translateX(-50%);
+  background: rgba(20,17,12,.8); padding: 6px 12px; border-radius: 999px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase;
+  pointer-events: none; white-space: nowrap;
+}
+
+/* ---------- Review ---------- */
+#review {
+  position: fixed; inset: 0; z-index: 10; background: var(--bg);
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  display: flex; flex-direction: column; gap: 14px;
+}
+#review video { flex: 1; min-height: 0; width: 100%; background: #000; border-radius: 14px; object-fit: contain; }
+#review .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+#review .actions button { border: 0; border-radius: 14px; padding: 14px; font-weight: 700; }
+#review .actions .wide { grid-column: 1 / -1; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<!-- ============ EDITOR ============ -->
+<main id="editor">
+  <header class="brand">
+    <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 4 56 18v28L32 60 8 46V18z" fill="#f2b134"/><path d="M20 26h24M20 33h24M20 40h14" stroke="#1a1205" stroke-width="4.5" stroke-linecap="round"/></svg>
+    <h1>Prompter <small>Colmen IA · teleprompter + cámara</small></h1>
+  </header>
+
+  <section style="display:grid;gap:8px">
+    <label class="label" for="script">Guion <span class="stats" id="stats">0 palabras · 0:00</span></label>
+    <textarea id="script" placeholder="Pega aquí tu guion…" spellcheck="false"></textarea>
+  </section>
+
+  <section style="display:grid;gap:8px">
+    <div class="label">Ajustes</div>
+    <div class="settings">
+      <div class="row"><span>Velocidad</span><output id="speedOut"></output><input id="speed" type="range" min="1" max="30" step="1"></div>
+      <div class="row"><span>Tamaño de letra</span><output id="sizeOut"></output><input id="size" type="range" min="20" max="90" step="2"></div>
+      <div class="row"><span>Alto de la franja de texto</span><output id="heightOut"></output><input id="height" type="range" min="25" max="100" step="5"></div>
+      <div class="row"><span>Opacidad del fondo</span><output id="opacityOut"></output><input id="opacity" type="range" min="0" max="100" step="5"></div>
+      <div class="row"><span>Color de fondo</span><div class="swatches" id="bgSw"></div></div>
+      <div class="row"><span>Color de letra</span><div class="swatches" id="fgSw"></div></div>
+      <div class="row"><span>Alineación</span><div class="seg" id="alignSeg">
+        <button data-v="left">Izquierda</button><button data-v="center">Centro</button></div></div>
+      <div class="row"><span>Cuenta regresiva</span><div class="seg" id="cdSeg">
+        <button data-v="0">No</button><button data-v="3">3 s</button><button data-v="5">5 s</button></div></div>
+      <div class="row"><span>Cámara</span><div class="seg" id="camSeg">
+        <button data-v="user">Frontal</button><button data-v="environment">Trasera</button><button data-v="off">Sin cámara</button></div></div>
+      <div class="row"><span>Texto en espejo <small class="note" style="display:block">Para vidrio de teleprompter</small></span><button class="toggle" id="flip" aria-label="Texto en espejo"></button></div>
+      <div class="row"><span>Línea guía de lectura</span><button class="toggle" id="guideT" aria-label="Línea guía"></button></div>
+    </div>
+    <p class="note">Dentro del prompter: toca el texto para pausar o seguir, y arrástralo para mover el guion a mano.</p>
+  </section>
+
+  <div class="error" id="err" hidden></div>
+</main>
+
+<div class="cta-bar" id="ctaBar">
+  <button class="primary" id="go">Abrir prompter</button>
+</div>
+
+<!-- ============ PROMPTER ============ -->
+<section id="prompter" hidden>
+  <video id="cam" playsinline muted autoplay></video>
+  <div id="band"><div class="viewport" id="vp"><div id="roll"></div><div id="guide"></div></div></div>
+  <div id="pausedTag" hidden>En pausa · toca para seguir</div>
+  <div id="countdown" hidden></div>
+  <div id="timer" hidden>● 0:00</div>
+
+  <div class="hud">
+    <div class="hud-row">
+      <div class="pill" aria-label="Velocidad">
+        <button id="spDown" aria-label="Más lento">−</button>
+        <output id="spLive"><b>Vel.</b><span></span></output>
+        <button id="spUp" aria-label="Más rápido">+</button>
+      </div>
+      <div class="pill" aria-label="Tamaño de letra">
+        <button id="szDown" aria-label="Letra más pequeña">−</button>
+        <output id="szLive"><b>Letra</b><span></span></output>
+        <button id="szUp" aria-label="Letra más grande">+</button>
+      </div>
+    </div>
+    <div class="hud-row">
+      <button class="icon-btn" id="back" aria-label="Volver al guion">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+      </button>
+      <button class="icon-btn" id="restart" aria-label="Volver al inicio del guion">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.5-5.8"/><path d="M4 4v5h5"/></svg>
+      </button>
+      <button id="recBtn" aria-label="Grabar"><i></i></button>
+      <button class="icon-btn" id="playBtn" aria-label="Iniciar o pausar texto">
+        <svg id="playIco" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+      <button class="icon-btn" id="switchCam" aria-label="Cambiar cámara">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h3l2-3h8l2 3h3v11H3z"/><path d="M9 13a3 3 0 0 1 5.2-2M15 13a3 3 0 0 1-5.2 2"/><path d="M14 9.5V11h-1.5M10 16.5V15h1.5"/></svg>
+      </button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ REVIEW ============ -->
+<section id="review" hidden>
+  <div class="label">Tu toma <span class="stats" id="takeInfo"></span></div>
+  <video id="takeVid" controls playsinline></video>
+  <div class="actions">
+    <button class="primary wide" id="shareBtn">Guardar / compartir</button>
+    <button class="ghost" id="dlBtn">Descargar archivo</button>
+    <button class="ghost" id="retake">Grabar otra vez</button>
+  </div>
+  <p class="note" id="saveHint">En iPhone, toca “Guardar / compartir” y luego “Guardar video” para enviarlo a Fotos.</p>
+</section>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const KEY = "prompter-colmenia-v1";
+
+  const BG = ["#000000", "#14110c", "#1b2a4a", "#ffffff"];
+  const FG = ["#ffffff", "#f2b134", "#ffe66d", "#111111"];
+  const SAMPLE =
+`Hola, soy Gabriel de Colmen IA.
+
+Hoy te voy a mostrar cómo un agente de inteligencia artificial puede ahorrarle a tu equipo comercial más de diez horas a la semana.
+
+Primero: el agente investiga a tus prospectos mientras tú duermes.
+
+Segundo: redacta el primer mensaje con el tono de tu marca.
+
+Y tercero: te deja todo listo en tu CRM para que solo tengas que llamar.
+
+Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
+
+  const defaults = {
+    script: SAMPLE, speed: 8, size: 40, height: 45, opacity: 55,
+    bg: BG[0], fg: FG[0], align: "center", countdown: 3, cam: "user", flip: false, guide: true
+  };
+  let S = { ...defaults };
+  try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch {}
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {} };
+
+  // ---------- Editor wiring ----------
+  const script = $("script");
+  script.value = S.script;
+  const words = (t) => (t.trim().match(/\S+/g) || []).length;
+  function updateStats() {
+    const w = words(script.value);
+    const secs = Math.round(w / 150 * 60); // ~150 palabras/min al hablar
+    $("stats").textContent = `${w} palabras · ~${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")} min`;
+  }
+  script.addEventListener("input", () => { S.script = script.value; save(); updateStats(); });
+  updateStats();
+
+  const ranges = [
+    ["speed", (v) => `${v}`],
+    ["size", (v) => `${v} px`],
+    ["height", (v) => `${v}%`],
+    ["opacity", (v) => `${v}%`],
+  ];
+  for (const [k, fmt] of ranges) {
+    const el = $(k), out = $(k + "Out");
+    el.value = S[k]; out.textContent = fmt(S[k]);
+    el.addEventListener("input", () => { S[k] = +el.value; out.textContent = fmt(S[k]); save(); applyStyle(); });
+  }
+
+  function swatches(id, list, key) {
+    const box = $(id);
+    for (const c of list) {
+      const b = document.createElement("button");
+      b.style.background = c; b.setAttribute("aria-label", c);
+      b.addEventListener("click", () => { S[key] = c; save(); mark(); applyStyle(); });
+      box.append(b);
+    }
+    const mark = () => [...box.children].forEach((b, i) => b.setAttribute("aria-pressed", list[i] === S[key]));
+    mark();
+  }
+  swatches("bgSw", BG, "bg");
+  swatches("fgSw", FG, "fg");
+
+  function seg(id, key, cast = (v) => v) {
+    const box = $(id);
+    const mark = () => [...box.children].forEach((b) => b.setAttribute("aria-pressed", String(cast(b.dataset.v) === S[key])));
+    box.addEventListener("click", (e) => {
+      const b = e.target.closest("button"); if (!b) return;
+      S[key] = cast(b.dataset.v); save(); mark(); applyStyle();
+    });
+    mark();
+  }
+  seg("alignSeg", "align");
+  seg("cdSeg", "countdown", Number);
+  seg("camSeg", "cam");
+
+  function toggle(id, key) {
+    const b = $(id);
+    b.setAttribute("aria-pressed", String(S[key]));
+    b.addEventListener("click", () => { S[key] = !S[key]; b.setAttribute("aria-pressed", String(S[key])); save(); applyStyle(); });
+  }
+  toggle("flip", "flip");
+  toggle("guideT", "guide");
+
+  function showError(msg) { const e = $("err"); e.textContent = msg; e.hidden = !msg; }
+
+  // ---------- Prompter ----------
+  const roll = $("roll"), band = $("band"), vp = $("vp"), cam = $("cam");
+  let pos = 0, playing = false, last = 0, stream = null;
+
+  const hexA = (hex, a) => {
+    const n = parseInt(hex.slice(1), 16);
+    return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`;
+  };
+  const pxPerSec = () => S.speed * 6 * (S.size / 40); // misma "sensación" de velocidad con cualquier tamaño de letra
+
+  function applyStyle() {
+    roll.style.fontSize = S.size + "px";
+    roll.style.color = S.fg;
+    roll.style.textAlign = S.align;
+    band.style.height = S.height + "%";
+    band.style.background = hexA(S.bg, S.cam === "off" ? 1 : S.opacity / 100);
+    $("guide").hidden = !S.guide;
+    $("guide").style.top = guideY() + "px";
+    $("spLive").querySelector("span").textContent = S.speed;
+    $("szLive").querySelector("span").textContent = S.size;
+    cam.classList.toggle("mirror", S.cam === "user");
+    render();
+  }
+  // La línea guía va a un tercio de la franja: ahí deberían estar tus ojos, cerca del lente.
+  const guideY = () => Math.round(vp.clientHeight * 0.3);
+
+  function render() {
+    const max = roll.scrollHeight;
+    if (pos > max) pos = max;
+    roll.style.transform = `translateY(${guideY() - pos}px)` + (S.flip ? " scaleX(-1)" : "");
+  }
+
+  function tick(t) {
+    if (!playing) return;
+    const dt = last ? (t - last) / 1000 : 0; last = t;
+    pos += pxPerSec() * dt;
+    if (pos >= roll.scrollHeight) { pos = roll.scrollHeight; setPlaying(false); }
+    render();
+    requestAnimationFrame(tick);
+  }
+  function setPlaying(on) {
+    playing = on; last = 0;
+    $("playIco").innerHTML = on ? '<path d="M7 5h4v14H7zM13 5h4v14h-4z"/>' : '<path d="M8 5v14l11-7z"/>';
+    $("pausedTag").hidden = on || pos === 0;
+    $("pausedTag").style.top = `calc(${S.height}% + 10px)`;
+    if (on) requestAnimationFrame(tick);
+  }
+
+  async function startCamera() {
+    stopCamera();
+    if (S.cam === "off") { cam.hidden = true; return true; }
+    cam.hidden = false;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      showError("Este navegador no permite usar la cámara. Abre el link en Chrome (Android) o Safari (iPhone), y asegúrate de que la dirección empiece por https://");
+      return false;
+    }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: S.cam, width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } },
+        audio: { echoCancellation: true, noiseSuppression: true },
+      });
+      cam.srcObject = stream;
+      await cam.play().catch(() => {});
+      return true;
+    } catch (e) {
+      const denied = e.name === "NotAllowedError";
+      showError(denied
+        ? "No diste permiso para la cámara o el micrófono. Actívalo en los ajustes del navegador para este sitio y vuelve a intentar. También puedes usar el modo “Sin cámara”."
+        : "No pude abrir la cámara: " + e.message);
+      return false;
+    }
+  }
+  function stopCamera() {
+    stream?.getTracks().forEach((t) => t.stop());
+    stream = null; cam.srcObject = null;
+  }
+
+  let wake = null;
+  async function keepAwake() { try { wake = await navigator.wakeLock?.request("screen"); } catch {} }
+
+  async function openPrompter() {
+    showError("");
+    roll.textContent = S.script.trim() + "\n\n\n";
+    $("prompter").hidden = false; $("editor").hidden = true; $("ctaBar").hidden = true;
+    pos = 0; applyStyle(); setPlaying(false);
+    $("recBtn").hidden = S.cam === "off";
+    $("switchCam").hidden = S.cam === "off";
+    keepAwake();
+    if (!(await startCamera())) closePrompter();
+  }
+  function closePrompter() {
+    if (recorder?.state === "recording") stopRec();
+    setPlaying(false); stopCamera();
+    wake?.release().catch(() => {}); wake = null;
+    $("prompter").hidden = true; $("editor").hidden = false; $("ctaBar").hidden = false;
+  }
+
+  $("go").addEventListener("click", openPrompter);
+  $("back").addEventListener("click", closePrompter);
+  $("restart").addEventListener("click", () => { pos = 0; setPlaying(false); render(); });
+  $("playBtn").addEventListener("click", () => setPlaying(!playing));
+  $("switchCam").addEventListener("click", async () => {
+    if (recorder?.state === "recording") return;
+    S.cam = S.cam === "user" ? "environment" : "user"; save(); applyStyle();
+    [...$("camSeg").children].forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === S.cam)));
+    await startCamera();
+  });
+  const bump = (k, d, min, max) => () => {
+    S[k] = Math.min(max, Math.max(min, S[k] + d)); save();
+    $(k).value = S[k]; $(k + "Out").textContent = k === "size" ? `${S[k]} px` : S[k];
+    applyStyle();
+  };
+  $("spDown").addEventListener("click", bump("speed", -1, 1, 30));
+  $("spUp").addEventListener("click", bump("speed", 1, 1, 30));
+  $("szDown").addEventListener("click", bump("size", -4, 20, 90));
+  $("szUp").addEventListener("click", bump("size", 4, 20, 90));
+
+  // Tocar = pausar/seguir. Arrastrar = mover el texto a mano.
+  let drag = null;
+  band.addEventListener("pointerdown", (e) => { drag = { y: e.clientY, pos, moved: false }; band.setPointerCapture(e.pointerId); });
+  band.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const dy = e.clientY - drag.y;
+    if (Math.abs(dy) > 6) drag.moved = true;
+    if (drag.moved) { pos = Math.max(0, drag.pos - dy); render(); }
+  });
+  band.addEventListener("pointerup", () => {
+    if (drag && !drag.moved) setPlaying(!playing);
+    drag = null;
+  });
+  addEventListener("resize", () => applyStyle());
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && !$("prompter").hidden) keepAwake(); });
+
+  // ---------- Recording ----------
+  let recorder = null, chunks = [], recStart = 0, timerId = 0, takeBlob = null, takeUrl = null;
+
+  function pickMime() {
+    const opts = ["video/mp4;codecs=avc1,mp4a", "video/mp4", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
+    return opts.find((m) => window.MediaRecorder?.isTypeSupported?.(m)) || "";
+  }
+
+  async function countdown(n) {
+    const el = $("countdown");
+    if (!n) return;
+    el.hidden = false;
+    for (let i = n; i > 0; i--) { el.textContent = i; await new Promise((r) => setTimeout(r, 1000)); }
+    el.hidden = true;
+  }
+
+  async function startRec() {
+    if (!stream) return;
+    if (!window.MediaRecorder) { alertBox("Este navegador no puede grabar video. Actualiza Chrome o Safari."); return; }
+    $("recBtn").disabled = true;
+    pos = 0; setPlaying(false); render();
+    await countdown(S.countdown);
+    const mime = pickMime();
+    chunks = [];
+    recorder = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 8_000_000 } : undefined);
+    recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+    recorder.onstop = onRecStop;
+    recorder.start(1000);
+    recStart = Date.now();
+    $("recBtn").classList.add("on"); $("recBtn").disabled = false; $("recBtn").setAttribute("aria-label", "Detener");
+    $("timer").hidden = false; updTimer(); timerId = setInterval(updTimer, 500);
+    setPlaying(true);
+  }
+  function updTimer() {
+    const s = Math.floor((Date.now() - recStart) / 1000);
+    $("timer").textContent = `● ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  }
+  function stopRec() {
+    recorder?.stop();
+    clearInterval(timerId); $("timer").hidden = true;
+    $("recBtn").classList.remove("on"); $("recBtn").setAttribute("aria-label", "Grabar");
+    setPlaying(false);
+  }
+  function onRecStop() {
+    const type = recorder.mimeType || chunks[0]?.type || "video/webm";
+    takeBlob = new Blob(chunks, { type });
+    if (takeUrl) URL.revokeObjectURL(takeUrl);
+    takeUrl = URL.createObjectURL(takeBlob);
+    $("takeVid").src = takeUrl;
+    const mb = (takeBlob.size / 1048576).toFixed(1);
+    const s = Math.round((Date.now() - recStart) / 1000);
+    $("takeInfo").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} · ${mb} MB · ${type.includes("mp4") ? "MP4" : "WebM"}`;
+    $("review").hidden = false;
+  }
+  $("recBtn").addEventListener("click", () => recorder?.state === "recording" ? stopRec() : startRec());
+
+  const fileName = () => {
+    const d = new Date(), p = (n) => String(n).padStart(2, "0");
+    const ext = takeBlob.type.includes("mp4") ? "mp4" : "webm";
+    return `toma-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.${ext}`;
+  };
+  function download() {
+    const a = document.createElement("a");
+    a.href = takeUrl; a.download = fileName();
+    document.body.append(a); a.click(); a.remove();
+  }
+  function alertBox(msg) { $("saveHint").textContent = msg; }
+  $("dlBtn").addEventListener("click", download);
+  $("shareBtn").addEventListener("click", async () => {
+    const file = new File([takeBlob], fileName(), { type: takeBlob.type });
+    if (navigator.canShare?.({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: "Mi toma" }); } catch {}
+    } else {
+      download();
+    }
+  });
+  $("retake").addEventListener("click", () => {
+    $("review").hidden = true; $("takeVid").pause();
+    pos = 0; render();
+  });
+
+  // ---------- PWA ----------
+  if ("serviceWorker" in navigator && location.protocol !== "file:") {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>
