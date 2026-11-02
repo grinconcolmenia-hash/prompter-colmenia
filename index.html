@@ -88,6 +88,15 @@ summary::after { content: ""; width: 8px; height: 8px; border-right: 1.5px solid
 details[open] summary::after { transform: rotate(-135deg); }
 .more { display: grid; gap: 26px; padding-top: 24px; }
 
+.inbox { display: grid; gap: 8px; }
+.inbox button {
+  display: grid; gap: 4px; text-align: left; border: 1px solid transparent; border-radius: 14px;
+  background: var(--surface); padding: 14px 16px;
+}
+.inbox button[aria-pressed=true] { border-color: var(--neon); }
+.inbox b { font-weight: 500; font-size: 15px; line-height: 1.35; color: #fff; }
+.inbox small { font-size: 12px; color: var(--muted); }
+
 .hint { font-size: 12px; color: var(--muted); margin: 0; }
 .error { background: #2a1513; color: #ffd9d4; border-radius: 12px; padding: 14px 16px; font-size: 14px; }
 
@@ -158,6 +167,11 @@ details[open] summary::after { transform: rotate(-135deg); }
     <img src="logo.png" alt="Colmen IA">
     <div><h1>PROMPTER</h1><p>Colmen IA</p></div>
   </header>
+
+  <section class="block" id="inboxBlock" hidden>
+    <div class="label">Guiones para grabar <span id="inboxInfo"></span></div>
+    <div class="inbox" id="inbox"></div>
+  </section>
 
   <section class="block">
     <label class="label" for="script">Guion <span id="stats"></span></label>
@@ -304,8 +318,40 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
     const secs = Math.round(w / 150 * 60); // ~150 palabras por minuto al hablar
     $("stats").textContent = `${w} palabras · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")} min`;
   }
-  script.addEventListener("input", () => { S.script = script.value; save(); updateStats(); });
+  script.addEventListener("input", () => { S.script = script.value; S.guionId = null; save(); updateStats(); markInbox(); });
   updateStats();
+
+  // Guiones que deja el guionista en guiones.json: tocar uno lo carga en el editor.
+  let guiones = [];
+  function markInbox() {
+    [...$("inbox").children].forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.id === S.guionId)));
+  }
+  async function loadInbox() {
+    try {
+      const res = await fetch("guiones.json", { cache: "no-store" });
+      if (!res.ok) return;
+      guiones = (await res.json()).guiones || [];
+    } catch { return; }
+    const box = $("inbox");
+    box.replaceChildren();
+    for (const g of guiones) {
+      const b = document.createElement("button");
+      b.dataset.id = g.id;
+      const w = (g.texto.match(/\S+/g) || []).length;
+      const t = document.createElement("b"); t.textContent = g.titulo;
+      const s = document.createElement("small"); s.textContent = [g.cuando, `${w} palabras`].filter(Boolean).join(" · ");
+      b.append(t, s);
+      b.addEventListener("click", () => {
+        S.script = g.texto; S.guionId = g.id; save();
+        script.value = g.texto; updateStats(); markInbox();
+      });
+      box.append(b);
+    }
+    $("inboxInfo").textContent = guiones.length ? `${guiones.length}` : "";
+    $("inboxBlock").hidden = !guiones.length;
+    markInbox();
+  }
+  loadInbox();
 
   const fmt = { speed: (v) => v, size: (v) => `${v} px`, height: (v) => `${v}%`, opacity: (v) => `${v}%` };
   for (const k of Object.keys(fmt)) {
