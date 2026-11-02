@@ -558,6 +558,29 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
     return opts.find((m) => window.MediaRecorder?.isTypeSupported?.(m)) || "";
   }
 
+  // La vista previa recorta con object-fit: cover, pero la cámara suele entregar el cuadro horizontal.
+  // Para que la toma salga como se ve, se graba un lienzo 1080x1920 con el mismo recorte centrado.
+  let drawing = false;
+  function portraitStream() {
+    const c = document.createElement("canvas");
+    if (!c.captureStream) return null;
+    c.width = 1080; c.height = 1920;
+    const ctx = c.getContext("2d");
+    const draw = () => {
+      if (!drawing) return;
+      const vw = cam.videoWidth, vh = cam.videoHeight;
+      if (vw && vh) {
+        const s = Math.max(c.width / vw, c.height / vh), w = vw * s, h = vh * s;
+        ctx.drawImage(cam, (c.width - w) / 2, (c.height - h) / 2, w, h);
+      }
+      requestAnimationFrame(draw);
+    };
+    drawing = true; draw();
+    const out = c.captureStream(30);
+    stream.getAudioTracks().forEach((t) => out.addTrack(t));
+    return out;
+  }
+
   async function countdown(n) {
     if (!n) return;
     const el = $("countdown");
@@ -574,7 +597,7 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
     await countdown(S.countdown);
     const mime = pickMime();
     chunks = [];
-    recorder = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 8_000_000 } : undefined);
+    recorder = new MediaRecorder(portraitStream() || stream, mime ? { mimeType: mime, videoBitsPerSecond: 8_000_000 } : undefined);
     recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
     recorder.onstop = onRecStop;
     recorder.start(1000);
@@ -594,6 +617,7 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
     setPlaying(false);
   }
   function onRecStop() {
+    drawing = false;
     const type = recorder.mimeType || chunks[0]?.type || "video/webm";
     takeBlob = new Blob(chunks, { type });
     if (takeUrl) URL.revokeObjectURL(takeUrl);
