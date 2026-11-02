@@ -120,6 +120,8 @@ details[open] summary::after { transform: rotate(-135deg); }
 }
 #guide { position: absolute; left: 10px; right: 10px; height: 0; border-top: 1px solid rgba(18,242,128,.55); pointer-events: none; }
 #guide::before { content: ""; position: absolute; left: -2px; top: -5px; width: 9px; height: 9px; border-radius: 50%; background: var(--neon); }
+/* Agarradera para subir o bajar la línea de lectura con el dedo. */
+#guideGrip { position: absolute; left: -10px; top: -22px; width: 44px; height: 44px; pointer-events: auto; touch-action: none; cursor: ns-resize; }
 
 .hud {
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; display: grid; gap: 14px;
@@ -218,6 +220,11 @@ details[open] summary::after { transform: rotate(-135deg); }
           <div class="seg" id="camSeg"><button data-v="user">Frontal</button><button data-v="environment">Trasera</button><button data-v="off">Sin cámara</button></div>
         </div>
         <div class="switch-row"><span>Línea guía</span><button class="toggle" id="guideT" aria-label="Línea guía"></button></div>
+        <div class="field">
+          <div class="field-head">Altura de la línea de lectura <output id="guidePosOut"></output></div>
+          <input id="guidePos" type="range" min="5" max="85" step="1" aria-label="Altura de la línea de lectura">
+          <p class="hint">También la puedes mover en el prompter arrastrando el punto verde.</p>
+        </div>
         <div class="switch-row"><span>Texto en espejo<small>Para vidrio de teleprompter</small></span><button class="toggle" id="flip" aria-label="Texto en espejo"></button></div>
       </div>
     </details>
@@ -233,7 +240,7 @@ details[open] summary::after { transform: rotate(-135deg); }
 <!-- ============ PROMPTER ============ -->
 <section id="prompter" hidden>
   <video id="cam" playsinline muted autoplay></video>
-  <div id="band"><div id="vp"><div id="roll"></div><div id="guide"></div></div></div>
+  <div id="band"><div id="vp"><div id="roll"></div><div id="guide"><div id="guideGrip" aria-label="Mover la línea de lectura"></div></div></div></div>
   <div id="pausedTag" hidden>En pausa · toca para seguir</div>
   <div id="countdown" hidden></div>
   <div id="timer" hidden>0:00</div>
@@ -303,7 +310,7 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
 
   const defaults = {
     script: SAMPLE, mode: "band", speed: 8, size: 40, height: 45, opacity: 55,
-    bg: BG[1], fg: FG[0], align: "center", countdown: 3, cam: "user", flip: false, guide: true
+    bg: BG[1], fg: FG[0], align: "center", countdown: 3, cam: "user", flip: false, guide: true, guidePos: 30
   };
   let S = { ...defaults };
   try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch {}
@@ -347,13 +354,16 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
       });
       box.append(b);
     }
+    // Si el guion cargado cambió en guiones.json (lo corrigió el guionista), se trae la versión nueva.
+    const actual = guiones.find((g) => g.id === S.guionId);
+    if (actual && actual.texto !== S.script) { S.script = actual.texto; save(); script.value = actual.texto; updateStats(); }
     $("inboxInfo").textContent = guiones.length ? `${guiones.length}` : "";
     $("inboxBlock").hidden = !guiones.length;
     markInbox();
   }
   loadInbox();
 
-  const fmt = { speed: (v) => v, size: (v) => `${v} px`, height: (v) => `${v}%`, opacity: (v) => `${v}%` };
+  const fmt = { speed: (v) => v, size: (v) => `${v} px`, height: (v) => `${v}%`, opacity: (v) => `${v}%`, guidePos: (v) => `${v}%` };
   for (const k of Object.keys(fmt)) {
     const el = $(k);
     el.value = S[k]; $(k + "Out").textContent = fmt[k](S[k]);
@@ -409,8 +419,8 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
   };
   const pxPerSec = () => S.speed * 6 * (S.size / 40); // misma sensación de velocidad con cualquier tamaño de letra
   const full = () => S.mode === "full";
-  // La línea guía va cerca del lente: a un tercio de la franja, o a un cuarto en pantalla completa.
-  const guideY = () => Math.round(vp.clientHeight * (full() ? 0.25 : 0.3));
+  // La línea de lectura va a S.guidePos % del alto visible (franja o pantalla completa); se ajusta en Más ajustes o arrastrando su punto.
+  const guideY = () => Math.round(vp.clientHeight * S.guidePos / 100);
 
   function applyStyle() {
     $("heightField").hidden = full();
@@ -509,6 +519,20 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
   $("spUp").addEventListener("click", bump("speed", 1, 1, 30));
   $("szDown").addEventListener("click", bump("size", -4, 20, 90));
   $("szUp").addEventListener("click", bump("size", 4, 20, 90));
+
+  // Arrastrar el punto verde = mover la línea de lectura (no toca el texto).
+  let gripY = null;
+  const grip = $("guideGrip");
+  grip.addEventListener("pointerdown", (e) => { e.stopPropagation(); gripY = true; grip.setPointerCapture(e.pointerId); });
+  grip.addEventListener("pointermove", (e) => {
+    if (!gripY) return;
+    const r = vp.getBoundingClientRect();
+    const pct = Math.round(Math.min(85, Math.max(5, (e.clientY - r.top) / r.height * 100)));
+    if (pct === S.guidePos) return;
+    S.guidePos = pct; $("guidePos").value = pct; $("guidePosOut").textContent = fmt.guidePos(pct);
+    applyStyle();
+  });
+  grip.addEventListener("pointerup", (e) => { e.stopPropagation(); gripY = null; save(); });
 
   // Tocar = pausar/seguir. Arrastrar = mover el texto a mano.
   let drag = null;
