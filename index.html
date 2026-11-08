@@ -109,8 +109,8 @@ details[open] summary::after { transform: rotate(-135deg); }
 
 /* ---------- Prompter ---------- */
 #prompter { position: fixed; inset: 0; background: #000; overflow: hidden; touch-action: none; }
+/* El zoom y el espejo de la cámara se aplican desde JS con transform. */
 #cam { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-#cam.mirror { transform: scaleX(-1); }
 #band { position: absolute; left: 0; right: 0; top: 0; padding-top: env(safe-area-inset-top); overflow: hidden; }
 #vp { position: relative; height: 100%; overflow: hidden; }
 #roll {
@@ -246,6 +246,16 @@ details[open] summary::after { transform: rotate(-135deg); }
   <div id="timer" hidden>0:00</div>
 
   <div class="hud">
+    <div class="hud-row" id="camRow">
+      <div class="pill">
+        <button id="zmOut" aria-label="Alejar cámara">−</button>
+        <output id="zmLive"><b>ZOOM</b><span></span></output>
+        <button id="zmIn" aria-label="Acercar cámara">+</button>
+      </div>
+      <button class="icon-btn" id="flipCam" aria-label="Cambiar entre cámara frontal y trasera">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><path d="M9.5 13a2.5 2.5 0 0 1 4.6-1.4M14.5 13a2.5 2.5 0 0 1-4.6 1.4"/><path d="M14.5 10v1.8h-1.8M9.5 16v-1.8h1.8"/></svg>
+      </button>
+    </div>
     <div class="hud-row">
       <div class="pill">
         <button id="spDown" aria-label="Más lento">−</button>
@@ -310,7 +320,7 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
 
   const defaults = {
     script: SAMPLE, mode: "band", speed: 8, size: 40, height: 45, opacity: 55,
-    bg: BG[1], fg: FG[0], align: "center", countdown: 3, cam: "user", flip: false, guide: true, guidePos: 30
+    bg: BG[1], fg: FG[0], align: "center", countdown: 3, cam: "user", flip: false, guide: true, guidePos: 30, zoom: 1
   };
   let S = { ...defaults };
   try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch {}
@@ -434,8 +444,33 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
     $("spLive").querySelector("span").textContent = S.speed;
     $("szLive").querySelector("span").textContent = S.size;
     $("pausedTag").style.top = full() ? `calc(env(safe-area-inset-top) + 16px)` : `calc(${S.height}% + 12px)`;
-    cam.classList.toggle("mirror", S.cam === "user");
+    applyZoom();
     render();
+  }
+
+  // Zoom de la cámara: 1 = llenar la pantalla; menos de 1 = alejar hasta ver el cuadro completo (con bordes negros).
+  const ZMAX = 3;
+  function zoomMin() {
+    const vw = cam.videoWidth, vh = cam.videoHeight, W = innerWidth, H = innerHeight;
+    if (!vw || !vh) return 1;
+    return Math.max(0.3, Math.min(W / vw, H / vh) / Math.max(W / vw, H / vh));
+  }
+  function applyZoom() {
+    const zmin = zoomMin();
+    S.zoom = Math.min(ZMAX, Math.max(zmin, S.zoom || 1));
+    const mx = S.cam === "user" ? -1 : 1;
+    cam.style.transform = `scale(${mx * S.zoom}, ${S.zoom})`;
+    $("zmLive").querySelector("span").textContent = S.zoom.toFixed(1) + "x";
+    $("zmOut").disabled = S.zoom <= zmin + 0.001;
+    $("zmIn").disabled = S.zoom >= ZMAX;
+  }
+  function stepZoom(dir) {
+    const zmin = zoomMin();
+    // Pasos fijos, y el mínimo exacto para poder ver toda la toma.
+    const steps = [zmin, ...[1, 1.25, 1.5, 2, 2.5, 3].filter((z) => z > zmin + 0.05)];
+    const next = dir > 0 ? steps.find((z) => z > S.zoom + 0.001) : steps.reverse().find((z) => z < S.zoom - 0.001);
+    if (next === undefined) return;
+    S.zoom = next; save(); applyZoom();
   }
 
   function render() {
@@ -468,10 +503,13 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
     }
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: S.cam, width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } },
+        // Se pide en la forma natural del sensor (horizontal); el navegador la gira al vertical.
+        // Pedir 1080x1920 hacía que el celular recortara el sensor y se veía con mucho zoom.
+        video: { facingMode: { ideal: S.cam }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
         audio: { echoCancellation: true, noiseSuppression: true },
       });
       cam.srcObject = stream;
+      cam.onloadedmetadata = cam.onresize = applyZoom;
       await cam.play().catch(() => {});
       return true;
     } catch (e) {
@@ -494,7 +532,7 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
     roll.textContent = S.script.trim() + "\n\n\n";
     $("prompter").hidden = false; $("editor").hidden = true; $("ctaBar").hidden = true;
     pos = 0; applyStyle(); setPlaying(false);
-    $("recBtn").hidden = S.cam === "off";
+    $("recBtn").hidden = $("camRow").hidden = S.cam === "off";
     keepAwake();
     if (!(await startCamera())) closePrompter();
   }
@@ -519,6 +557,15 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
   $("spUp").addEventListener("click", bump("speed", 1, 1, 30));
   $("szDown").addEventListener("click", bump("size", -4, 20, 90));
   $("szUp").addEventListener("click", bump("size", 4, 20, 90));
+  $("zmOut").addEventListener("click", () => stepZoom(-1));
+  $("zmIn").addEventListener("click", () => stepZoom(1));
+  // Cambiar de cámara en vivo (no mientras graba, porque cortaría la toma).
+  $("flipCam").addEventListener("click", async () => {
+    if (recorder?.state === "recording") return;
+    S.cam = S.cam === "user" ? "environment" : "user"; S.zoom = 1; save(); segMarks.cam();
+    applyStyle();
+    if (!(await startCamera())) closePrompter();
+  });
 
   // Arrastrar el punto verde = mover la línea de lectura (no toca el texto).
   let gripY = null;
@@ -570,7 +617,9 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
       if (!drawing) return;
       const vw = cam.videoWidth, vh = cam.videoHeight;
       if (vw && vh) {
-        const s = Math.max(c.width / vw, c.height / vh), w = vw * s, h = vh * s;
+        // Mismo zoom que la vista previa; si se alejó, lo que sobra queda en negro.
+        const s = Math.max(c.width / vw, c.height / vh) * S.zoom, w = vw * s, h = vh * s;
+        ctx.fillStyle = "#000"; ctx.fillRect(0, 0, c.width, c.height);
         ctx.drawImage(cam, (c.width - w) / 2, (c.height - h) / 2, w, h);
       }
       requestAnimationFrame(draw);
