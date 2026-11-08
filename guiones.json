@@ -1,12 +1,6 @@
 {
   "guiones": [
     {
-      "id": "2026-11-03-historia-taller-ignia-a",
-      "titulo": "Historia: invitación al taller con IGNIA",
-      "cuando": "Hoy · historia · gancho A",
-      "texto": "¿Te demoras más editando tus videos que grabándolos?\n\nHoy te enseño a crear un agente que los edite por ti.\n\nEs un taller virtual con IGNIA, hoy a las cinco y media, hora Colombia, por Zoom.\n\nLlega con tres cosas: un video tuyo listo para editar, dos o tres reels cuya edición te guste y Claude Code instalado en tu computador.\n\nEl link está aquí."
-    },
-    {
       "id": "2026-11-09-repos-video-con-claude-c",
       "titulo": "4 herramientas para que Claude edite tus videos a tu estilo",
       "cuando": "Lunes 9 · tarde · gancho C",
