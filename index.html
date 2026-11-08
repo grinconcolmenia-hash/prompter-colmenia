@@ -504,7 +504,7 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
       stream = await navigator.mediaDevices.getUserMedia({
         // Se pide en la forma natural del sensor (horizontal); el navegador la gira al vertical.
         // Pedir 1080x1920 hacía que el celular recortara el sensor y se veía con mucho zoom.
-        video: { facingMode: { ideal: S.cam }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+        video: { facingMode: { ideal: S.cam }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 30 } },
         audio: { echoCancellation: true, noiseSuppression: true },
       });
       cam.srcObject = stream;
@@ -617,10 +617,13 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
     if (!c.captureStream) return null;
     c.width = 1080; c.height = 1920;
     const ctx = c.getContext("2d");
-    const draw = () => {
+    // Se dibuja a 30 cuadros por segundo fijos: en pantallas de 120 Hz la toma salía con cuadros irregulares.
+    let lastDraw = 0;
+    const draw = (t = 0) => {
       if (!drawing) return;
       const vw = cam.videoWidth, vh = cam.videoHeight;
-      if (vw && vh) {
+      if (vw && vh && t - lastDraw >= 1000 / 30 - 4) {
+        lastDraw = t;
         // Mismo zoom que la vista previa; si se alejó, lo que sobra queda en negro.
         const s = Math.max(c.width / vw, c.height / vh) * S.zoom, w = vw * s, h = vh * s;
         ctx.fillStyle = "#000"; ctx.fillRect(0, 0, c.width, c.height);
@@ -654,7 +657,9 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
     recorder = new MediaRecorder(portraitStream() || stream, mime ? { mimeType: mime, videoBitsPerSecond: 8_000_000 } : undefined);
     recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
     recorder.onstop = onRecStop;
-    recorder.start(1000);
+    // Sin cortes cada segundo: en iPhone, grabar por pedazos dejaba tomas largas con una duración
+    // imposible (83 días) porque el último pedazo no se cerraba bien. Así el archivo se escribe de una vez al parar.
+    recorder.start();
     recStart = Date.now();
     $("recBtn").classList.add("on"); $("recBtn").disabled = false; $("recBtn").setAttribute("aria-label", "Detener");
     $("timer").hidden = false; updTimer(); timerId = setInterval(updTimer, 500);
@@ -670,8 +675,10 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
     $("recBtn").classList.remove("on"); $("recBtn").setAttribute("aria-label", "Grabar");
     setPlaying(false);
   }
-  function onRecStop() {
+  async function onRecStop() {
     drawing = false;
+    // Algunos navegadores entregan el último pedazo justo después de "stop": se espera un momento para no perderlo.
+    await new Promise((r) => setTimeout(r, 150));
     const type = recorder.mimeType || chunks[0]?.type || "video/webm";
     takeBlob = new Blob(chunks, { type });
     if (takeUrl) URL.revokeObjectURL(takeUrl);
