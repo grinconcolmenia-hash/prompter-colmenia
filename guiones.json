@@ -17,6 +17,12 @@
       "titulo": "Historia: invitación al taller con IGNIA",
       "cuando": "Hoy · historia · gancho A",
       "texto": "¿Te demoras más editando tus videos que grabándolos?\n\nHoy te enseño a crear un agente que los edite por ti.\n\nEs un taller virtual con IGNIA, hoy a las cinco y media, hora Colombia, por Zoom.\n\nLlega con tres cosas: un video tuyo listo para editar, dos o tres reels cuya edición te guste y Claude Code instalado en tu computador.\n\nEl link está aquí."
+    },
+    {
+      "id": "2026-11-09-repos-video-con-claude-c",
+      "titulo": "4 herramientas para que Claude edite tus videos a tu estilo",
+      "cuando": "Lunes 9 · tarde · gancho C",
+      "texto": "Los trial reels te dan una súper ventaja: probar versiones del mismo video, a ver cuál pega.\n\nPero cada versión no debería costarte otra cotización de la agencia.\n\nPara solucionar esto, te muestro mi kit para editar rápido con IA.\n\nUno: Remotion.\n\nEs el motor que edita tus videos a través de código.\n\nY con Remotion Studio ves cada ajuste que hace.\n\nSi te da pereza abrirlo, dile a Claude que te haga un artefacto de edición, y listo.\n\nEsta es la base para editar con IA.\n\nDos: watch.\n\nLe da a Claude la habilidad de ver videos de referencia, para que aprenda los estilos de edición que te gustan.\n\nSe conecta directo a Instagram.\n\nEso sí: pídele que analice más cuadros por segundo, para que entienda el estilo y el flow de la edición.\n\nTres: audio-analyzer.\n\nEl audio es la mitad del video.\n\nEsta skill, sumada a tus referencias, le permite a Claude entender dónde va música, dónde no y dónde enfatizar con sonidos.\n\nAsí tus videos no se sienten sosos.\n\nCuatro: remocn.\n\nUn repositorio precioso de efectos para textos, transiciones y más elementos.\n\nCopias su prompt, se lo pasas a tu agente de Claude, y tus videos tienen efectos profesionales.\n\nAhora deja de esperar tres días a que tu agencia responda.\n\nCrea agentes que editen por ti, a tu estilo y a tu manera.\n\nComenta VIDEO y te mando la lista de elementos."
     }
   ]
 }
