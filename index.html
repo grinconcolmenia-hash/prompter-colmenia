@@ -298,6 +298,7 @@ details[open] summary::after { transform: rotate(-135deg); }
   <p class="hint" id="saveHint">En iPhone, toca “Guardar o compartir” y luego “Guardar video” para enviarlo a Fotos.</p>
 </section>
 
+<script src="mp4fix.js"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
@@ -467,6 +468,7 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
     $("zmIn").disabled = S.zoom >= ZMAX;
   }
   function stepZoom(dir) {
+    if (recDirect && recorder?.state === "recording") return; // grabando directo de la cámara, el zoom no entraría en la toma
     const zmin = zoomMin();
     // Pasos fijos, y el mínimo exacto para poder ver toda la toma.
     const steps = [zmin, ...[1, 1.25, 1.5, 2, 2.5, 3].filter((z) => z > zmin + 0.05)];
@@ -630,10 +632,22 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
       ctx.fillStyle = "#000"; ctx.fillRect(0, 0, c.width, c.height);
       ctx.drawImage(cam, (c.width - w) / 2, (c.height - h) / 2, w, h);
     };
-    clearInterval(drawTimer); draw(); drawTimer = setInterval(draw, 1000 / 30);
-    const out = c.captureStream(30);
+    // Cada cuadro se entrega a mano (requestFrame) para no depender de cuándo el navegador decide capturar el lienzo.
+    const out = c.captureStream(0);
+    const vt = out.getVideoTracks()[0];
+    const push = vt?.requestFrame ? () => { draw(); vt.requestFrame(); } : draw;
+    if (!vt?.requestFrame) { out.removeTrack(vt); out.addTrack(c.captureStream(30).getVideoTracks()[0]); }
+    clearInterval(drawTimer); push(); drawTimer = setInterval(push, 1000 / 30);
     stream.getAudioTracks().forEach((t) => out.addTrack(t));
     return out;
+  }
+
+  // En iPhone la cámara ya llega vertical: si no hay zoom, se graba directo de la cámara, sin lienzo de por medio.
+  // El lienzo es el que perdía cuadros y dejaba la toma congelada.
+  let recDirect = false;
+  function recordingStream() {
+    recDirect = cam.videoHeight > cam.videoWidth && Math.abs(S.zoom - 1) < 0.01;
+    return recDirect ? stream : portraitStream() || stream;
   }
 
   async function countdown(n) {
@@ -653,7 +667,7 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
     await countdown(S.countdown);
     const mime = pickMime();
     chunks = [];
-    recorder = new MediaRecorder(portraitStream() || stream, mime ? { mimeType: mime, videoBitsPerSecond: 8_000_000 } : undefined);
+    recorder = new MediaRecorder(recordingStream(), mime ? { mimeType: mime, videoBitsPerSecond: 8_000_000 } : undefined);
     recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
     recorder.onstop = onRecStop;
     // Sin cortes cada segundo: en iPhone, grabar por pedazos dejaba tomas largas con una duración
@@ -680,6 +694,10 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
     await new Promise((r) => setTimeout(r, 150));
     const type = recorder.mimeType || chunks[0]?.type || "video/webm";
     takeBlob = new Blob(chunks, { type });
+    // Si aun así a la toma le faltaron cuadros un momento, se arregla la duración dañada antes de guardarla.
+    if (type.includes("mp4") && window.fixMp4Durations) {
+      try { takeBlob = await fixMp4Durations(takeBlob); } catch {}
+    }
     if (takeUrl) URL.revokeObjectURL(takeUrl);
     takeUrl = URL.createObjectURL(takeBlob);
     $("takeVid").src = takeUrl;
