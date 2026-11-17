@@ -96,6 +96,7 @@ details[open] summary::after { transform: rotate(-135deg); }
 .inbox button[aria-pressed=true] { border-color: var(--neon); }
 .inbox b { font-weight: 500; font-size: 15px; line-height: 1.35; color: #fff; }
 .inbox small { font-size: 12px; color: var(--muted); }
+.inbox i { font-style: normal; font-size: 13px; color: var(--text); opacity: .8; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 .hint { font-size: 12px; color: var(--muted); margin: 0; }
 .error { background: #2a1513; color: #ffd9d4; border-radius: 12px; padding: 14px 16px; font-size: 14px; }
@@ -356,7 +357,9 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
       const w = (g.texto.match(/\S+/g) || []).length;
       const t = document.createElement("b"); t.textContent = g.titulo;
       const s = document.createElement("small"); s.textContent = [g.cuando, `${w} palabras`].filter(Boolean).join(" · ");
-      b.append(t, s);
+      // Las versiones A/B/C de un tema comparten título: la primera frase es lo que las distingue.
+      const f = document.createElement("i"); f.textContent = "“" + g.texto.replace(/\*\(.*?\)\*/g, "").trim().split("\n")[0] + "”";
+      b.append(t, f, s);
       b.addEventListener("click", () => {
         S.script = g.texto; S.guionId = g.id; save();
         script.value = g.texto; updateStats(); markInbox();
@@ -504,7 +507,7 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
       stream = await navigator.mediaDevices.getUserMedia({
         // Se pide en la forma natural del sensor (horizontal); el navegador la gira al vertical.
         // Pedir 1080x1920 hacía que el celular recortara el sensor y se veía con mucho zoom.
-        video: { facingMode: { ideal: S.cam }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 30 } },
+        video: { facingMode: { ideal: S.cam }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
         audio: { echoCancellation: true, noiseSuppression: true },
       });
       cam.srcObject = stream;
@@ -611,27 +614,23 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
 
   // La vista previa recorta con object-fit: cover, pero la cámara suele entregar el cuadro horizontal.
   // Para que la toma salga como se ve, se graba un lienzo 1080x1920 con el mismo recorte centrado.
-  let drawing = false;
+  let drawTimer = 0;
   function portraitStream() {
     const c = document.createElement("canvas");
     if (!c.captureStream) return null;
     c.width = 1080; c.height = 1920;
     const ctx = c.getContext("2d");
-    // Se dibuja a 30 cuadros por segundo fijos: en pantallas de 120 Hz la toma salía con cuadros irregulares.
-    let lastDraw = 0;
-    const draw = (t = 0) => {
-      if (!drawing) return;
+    // Se dibuja con un reloj propio de 30 fps y no con requestAnimationFrame: cuando el celular pausa
+    // o frena el refresco de pantalla, la toma quedaba congelada en un cuadro.
+    const draw = () => {
       const vw = cam.videoWidth, vh = cam.videoHeight;
-      if (vw && vh && t - lastDraw >= 1000 / 30 - 4) {
-        lastDraw = t;
-        // Mismo zoom que la vista previa; si se alejó, lo que sobra queda en negro.
-        const s = Math.max(c.width / vw, c.height / vh) * S.zoom, w = vw * s, h = vh * s;
-        ctx.fillStyle = "#000"; ctx.fillRect(0, 0, c.width, c.height);
-        ctx.drawImage(cam, (c.width - w) / 2, (c.height - h) / 2, w, h);
-      }
-      requestAnimationFrame(draw);
+      if (!vw || !vh) return;
+      // Mismo zoom que la vista previa; si se alejó, lo que sobra queda en negro.
+      const s = Math.max(c.width / vw, c.height / vh) * S.zoom, w = vw * s, h = vh * s;
+      ctx.fillStyle = "#000"; ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(cam, (c.width - w) / 2, (c.height - h) / 2, w, h);
     };
-    drawing = true; draw();
+    clearInterval(drawTimer); draw(); drawTimer = setInterval(draw, 1000 / 30);
     const out = c.captureStream(30);
     stream.getAudioTracks().forEach((t) => out.addTrack(t));
     return out;
@@ -676,7 +675,7 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
     setPlaying(false);
   }
   async function onRecStop() {
-    drawing = false;
+    clearInterval(drawTimer);
     // Algunos navegadores entregan el último pedazo justo después de "stop": se espera un momento para no perderlo.
     await new Promise((r) => setTimeout(r, 150));
     const type = recorder.mimeType || chunks[0]?.type || "video/webm";
