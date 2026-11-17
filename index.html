@@ -142,6 +142,10 @@ details[open] summary::after { transform: rotate(-135deg); }
   position: absolute; z-index: 3; top: calc(14px + env(safe-area-inset-top)); right: max(14px, env(safe-area-inset-right));
   background: var(--rec); color: #fff; font: 500 12px/1 var(--sans); font-variant-numeric: tabular-nums; padding: 7px 10px; border-radius: 999px;
 }
+#camWarn {
+  position: absolute; z-index: 5; left: 16px; right: 16px; top: 40%; padding: 16px 18px; border-radius: 14px;
+  background: var(--rec); color: #fff; font: 500 15px/1.4 var(--sans); text-align: center; pointer-events: none;
+}
 #countdown { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; pointer-events: none; font: 400 150px/1 var(--display); color: var(--neon); text-shadow: 0 0 40px rgba(18,242,128,.35); }
 #pausedTag {
   position: absolute; z-index: 3; left: 50%; transform: translateX(-50%); white-space: nowrap; pointer-events: none;
@@ -244,6 +248,7 @@ details[open] summary::after { transform: rotate(-135deg); }
   <div id="pausedTag" hidden>En pausa · toca para seguir</div>
   <div id="countdown" hidden></div>
   <div id="timer" hidden>0:00</div>
+  <div id="camWarn" hidden>La cámara se congeló. Detén la toma y vuelve a grabar: la app la reinicia sola.</div>
 
   <div class="hud">
     <div class="hud-row" id="camRow">
@@ -295,6 +300,10 @@ details[open] summary::after { transform: rotate(-135deg); }
     <button id="dlBtn">Descargar</button>
     <button id="retake">Grabar otra vez</button>
   </div>
+  <details id="diagBox" class="hint">
+    <summary>Qué pasó con la cámara en esta toma</summary>
+    <pre id="diagText" style="white-space:pre-wrap;font:12px/1.5 ui-monospace,monospace;margin:10px 0 0"></pre>
+  </details>
   <p class="hint" id="saveHint">En iPhone, toca “Guardar o compartir” y luego “Guardar video” para enviarlo a Fotos.</p>
 </section>
 
@@ -514,7 +523,14 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
       });
       cam.srcObject = stream;
       cam.onloadedmetadata = cam.onresize = applyZoom;
+      for (const t of stream.getTracks()) {
+        t.onmute = () => diag(`${t.kind}: silenciada por el sistema`);
+        t.onunmute = () => diag(`${t.kind}: volvió`);
+        t.onended = () => diag(`${t.kind}: terminada`);
+      }
       await cam.play().catch(() => {});
+      lastCamFrame = performance.now(); lastSample = null;
+      diag("cámara encendida");
       return true;
     } catch (e) {
       showError(e.name === "NotAllowedError"
@@ -524,8 +540,47 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
     }
   }
   function stopCamera() {
-    stream?.getTracks().forEach((t) => t.stop());
+    stream?.getTracks().forEach((t) => { t.onended = null; t.stop(); });
     stream = null; cam.srcObject = null;
+  }
+
+  // ---------- Vigilante de la cámara ----------
+  // En iPhone la cámara se puede interrumpir sin avisar (hoja de compartir, salir de la app, reproducir la toma con
+  // sonido): la vista se queda en el último cuadro y el micrófono sigue. Cada medio segundo se toma una muestra
+  // diminuta de la imagen: una cámara viva siempre cambia algo (aunque sea ruido del sensor) y una congelada queda
+  // idéntica. Si pasan 2 s sin ningún cambio, la cámara está congelada.
+  let lastCamFrame = 0, lastSample = null;
+  const probe = document.createElement("canvas");
+  probe.width = probe.height = 16;
+  const probeCtx = probe.getContext("2d", { willReadFrequently: true });
+  const DIAG = "prompter-diag";
+  let diagLog = [];
+  try { diagLog = JSON.parse(localStorage.getItem(DIAG) || "[]"); } catch {}
+  function diag(msg) {
+    const d = new Date(), p = (n) => String(n).padStart(2, "0");
+    diagLog.push(`${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())} ${msg}`);
+    diagLog = diagLog.slice(-200);
+    try { localStorage.setItem(DIAG, JSON.stringify(diagLog)); } catch {}
+  }
+  setInterval(() => {
+    if (!stream || !cam.videoWidth) return;
+    try {
+      probeCtx.drawImage(cam, 0, 0, 16, 16);
+      const px = probeCtx.getImageData(0, 0, 16, 16).data;
+      if (!lastSample || px.some((v, i) => v !== lastSample[i])) lastCamFrame = performance.now();
+      lastSample = px;
+    } catch { lastCamFrame = performance.now(); } // si no se puede leer la imagen, no se da falsa alarma
+  }, 500);
+  function camAlive() {
+    const v = stream?.getVideoTracks()[0];
+    return !!v && v.readyState === "live" && !v.muted && performance.now() - lastCamFrame < 2000;
+  }
+  const waitCam = async (ms) => { const t0 = performance.now(); while (!camAlive() && performance.now() - t0 < ms) await new Promise((r) => setTimeout(r, 100)); return camAlive(); };
+  async function ensureCamera(why) {
+    if (S.cam === "off" || camAlive()) return true;
+    diag(`cámara congelada (${why}): se reinicia`);
+    if (!(await startCamera())) return false;
+    return waitCam(3000);
   }
 
   let wake = null;
@@ -604,10 +659,16 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
     drag = null;
   });
   addEventListener("resize", () => applyStyle());
-  document.addEventListener("visibilitychange", () => { if (!document.hidden && !$("prompter").hidden) keepAwake(); });
+  document.addEventListener("visibilitychange", () => {
+    diag(document.hidden ? "la app quedó en segundo plano" : "volviste a la app");
+    if (document.hidden || $("prompter").hidden) return;
+    keepAwake();
+    // Al volver (por ejemplo, de la hoja de compartir) la cámara suele quedar interrumpida: se revisa y se reinicia.
+    if (recorder?.state !== "recording") setTimeout(() => recorder?.state !== "recording" && ensureCamera("al volver a la app"), 800);
+  });
 
   // ---------- Recording ----------
-  let recorder = null, chunks = [], recStart = 0, timerId = 0, takeBlob = null, takeUrl = null, takeStart = 0;
+  let recorder = null, chunks = [], recStart = 0, timerId = 0, takeBlob = null, takeUrl = null, takeStart = 0, watchId = 0, takeDiagFrom = 0;
 
   function pickMime() {
     const opts = ["video/mp4;codecs=avc1,mp4a", "video/mp4", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
@@ -664,6 +725,11 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
     $("recBtn").disabled = true;
     // Graba desde donde esté el texto (escena elegida o arrastrado a mano); "Grabar otra vez" vuelve aquí.
     takeStart = pos; setPlaying(false); render();
+    // La cámara pudo quedar interrumpida desde la toma anterior: se revisa y, si hace falta, se reinicia antes de grabar.
+    if (!(await ensureCamera("antes de grabar"))) {
+      showError("La cámara no responde. Vuelve al guion y abre el prompter otra vez.");
+      $("recBtn").disabled = false; closePrompter(); return;
+    }
     await countdown(S.countdown);
     const mime = pickMime();
     chunks = [];
@@ -673,7 +739,17 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
     // Sin cortes cada segundo: en iPhone, grabar por pedazos dejaba tomas largas con una duración
     // imposible (83 días) porque el último pedazo no se cerraba bien. Así el archivo se escribe de una vez al parar.
     recorder.start();
-    recStart = Date.now();
+    recStart = Date.now(); takeDiagFrom = diagLog.length;
+    diag(`grabando (${recDirect ? "directo de la cámara" : "lienzo, zoom " + S.zoom.toFixed(2)})`);
+    $("camWarn").hidden = true;
+    // Mientras graba: si la cámara deja de mandar cuadros, se avisa de inmediato para no perder la toma.
+    clearInterval(watchId);
+    watchId = setInterval(() => {
+      if (recorder?.state !== "recording") return clearInterval(watchId);
+      const ok = camAlive();
+      if (!ok && $("camWarn").hidden) diag(`cámara congelada a los ${Math.round((Date.now() - recStart) / 1000)} s de la toma`);
+      $("camWarn").hidden = ok;
+    }, 500);
     $("recBtn").classList.add("on"); $("recBtn").disabled = false; $("recBtn").setAttribute("aria-label", "Detener");
     $("timer").hidden = false; updTimer(); timerId = setInterval(updTimer, 500);
     setPlaying(true);
@@ -684,6 +760,8 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
   }
   function stopRec() {
     recorder?.stop();
+    clearInterval(watchId); $("camWarn").hidden = true;
+    diag(`toma detenida a los ${Math.round((Date.now() - recStart) / 1000)} s`);
     clearInterval(timerId); $("timer").hidden = true;
     $("recBtn").classList.remove("on"); $("recBtn").setAttribute("aria-label", "Grabar");
     setPlaying(false);
@@ -703,6 +781,11 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
     $("takeVid").src = takeUrl;
     const s = Math.round((Date.now() - recStart) / 1000);
     $("takeInfo").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} · ${(takeBlob.size / 1048576).toFixed(1)} MB · ${type.includes("mp4") ? "MP4" : "WebM"}`;
+    // Registro desde un poco antes de la toma, para ver qué le pasó a la cámara.
+    const lines = diagLog.slice(Math.max(0, takeDiagFrom - 6));
+    $("diagText").textContent = lines.join("\n");
+    $("diagBox").querySelector("summary").textContent = lines.some((l) => l.includes("congelada") || l.includes("silenciada"))
+      ? "⚠ La cámara se interrumpió en esta toma: toca para ver" : "Qué pasó con la cámara en esta toma";
     $("review").hidden = false;
   }
   $("recBtn").addEventListener("click", () => recorder?.state === "recording" ? stopRec() : startRec());
@@ -725,7 +808,7 @@ Si quieres verlo funcionando con tu empresa, escríbeme y lo armamos juntos.`;
       download();
     }
   });
-  $("retake").addEventListener("click", () => { $("review").hidden = true; $("takeVid").pause(); pos = takeStart; render(); });
+  $("retake").addEventListener("click", () => { $("review").hidden = true; $("takeVid").pause(); pos = takeStart; render(); ensureCamera("grabar otra vez"); });
 
   // ---------- PWA ----------
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
