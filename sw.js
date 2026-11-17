@@ -1,5 +1,5 @@
 // Network first, cache as fallback: updates show up right away, and the app still opens offline.
-const CACHE = "prompter-v12";
+const CACHE = "prompter-v13";
 const SHELL = ["./", "index.html", "manifest.webmanifest", "logo.png", "icon-192.png", "icon-512.png", "guiones.json", "mp4fix.js"];
 
 self.addEventListener("install", (e) => {
